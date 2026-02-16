@@ -1,7 +1,6 @@
 import * as fs from "@std/fs";
 import * as xml from "@libs/xml";
 import * as z from "zod";
-import { stripPrepending } from "./shared.ts";
 
 const TestCaseBase = z.strictObject({
     "@classname": z.string(),
@@ -94,6 +93,18 @@ function withoutRoot(root: string, path: string): string[] {
         .filter((x) => x.trim() !== "");
 
     return stripPrepending(rootComponents, pathComponents);
+}
+
+export function stripPrepending(root: string[], target: string[]): string[] {
+    const cp = [...target];
+    for (let i = 0; i < root.length; ++i) {
+        if (cp.shift() !== root[i]) {
+            throw new Error(
+                `expected root '${root}' to match target '${target}'`,
+            );
+        }
+    }
+    return cp;
 }
 
 function parseTestCase(x: z.infer<typeof TestCase>): Case {

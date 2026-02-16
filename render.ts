@@ -2,18 +2,24 @@ import { ensureDir } from "@std/fs/ensure-dir";
 import { Report } from "./parsing.ts";
 import { join } from "@std/path/join";
 import { escape } from "@std/html";
-import { stripPrepending } from "./shared.ts";
+import styleCss from "./assets/style.css" with { type: "text" };
+import filterCaseResultsJs from "./assets/filter-case-results.js" with {
+    type: "text",
+};
+
+type RelationshipTreeEntry = {
+    relationship: string[];
+    children: RelationshipTree;
+    report: Report | null;
+};
 
 type RelationshipTree = {
-    [key: string]: { children: RelationshipTree; report: Report | null };
+    [key: string]: RelationshipTreeEntry;
 };
 
 function buildTree(reports: Report[]): RelationshipTree {
     const ret: RelationshipTree = {};
-    const sorted = reports.toSorted((lhs, rhs) =>
-        lhs.relationship.length - rhs.relationship.length
-    );
-    for (const report of sorted) {
+    for (const report of reports) {
         let curr = ret;
         for (
             let componentIdx = 0;
@@ -22,7 +28,15 @@ function buildTree(reports: Report[]): RelationshipTree {
         ) {
             const component = report.relationship[componentIdx];
             if (curr[component] === undefined) {
-                curr[component] = { children: {}, report: null };
+                const relationship = [];
+                for (let i = 0; i <= componentIdx; ++i) {
+                    relationship.push(report.relationship[i]);
+                }
+                curr[component] = {
+                    children: {},
+                    report: null,
+                    relationship,
+                };
             }
             if (componentIdx === report.relationship.length - 1) {
                 curr[component].report = report;
@@ -42,6 +56,7 @@ function rootHtml(name: string, body: string) {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>${name}</title>
                 <link href="/style.css" rel="stylesheet">
+                <script src="/filter-case-results.js" defer></script>
             </head>
             <body>
                 ${body}
@@ -53,7 +68,7 @@ function rootHtml(name: string, body: string) {
 function renderTestCase(test: Report["cases"][number]) {
     const type: "success" | "skipped" | "failure" | "error" = test.result;
 
-    return `<case ${type}><case-name>${
+    return `<case ${type}><button>[i]</button>  <case-name>${
         escape(test.name)
     }</case-name> ${test.duration}s | ${
         type.padStart("skipped".length)
@@ -69,25 +84,81 @@ function renderReport(report: Report): string {
     `;
 }
 
-function renderChildLink(report: Report, root: string[]): string {
-    const components = [];
-    const links = [];
-    for (
-        const stage of stripPrepending(root, report.relationship)
-    ) {
-        components.push(stage);
-        const [head, ...tail] = components;
-        links.push(`<a href="${join(head, ...tail)}">${stage}</a>`);
+function collapseChildren(tree: RelationshipTree): Report[] {
+    const ret: Report[] = [];
+    for (const { report, children } of Object.values(tree)) {
+        if (report !== null) {
+            ret.push(report);
+        }
+        ret.push(...collapseChildren(children));
     }
-    links.unshift("<span>.</span>");
-    return `<h3>${links.join(" / ")}</h3>`;
+    return ret;
 }
 
-function renderReportPage(level: string[], reports: Report[]) {
-    const existing = findEntity(level, reports);
-    const children = findChildren(level, reports);
-    const toRender = [...existing, ...children];
-    const stats = toRender.reduce(
+function renderChildrenTree(tree: RelationshipTree): string {
+    return Object.keys(tree).map((name) => {
+        const entry = tree[name];
+        return `<li>
+            <p><a href="/${tree[name].relationship.join("/")}">${name}</a></p>
+            ${
+            Object.keys(entry.children).length > 0
+                ? `<ul>${renderChildrenTree(entry.children)}</ul>`
+                : ""
+        }
+        </li>`;
+    }).join("");
+}
+
+function renderTwinGrid(
+    entry: RelationshipTree,
+    stats: ReturnType<typeof reduceReportStats>,
+    includeBack: boolean,
+): string {
+    return `
+    <twin-grid>
+        <report-children>
+            ${includeBack ? `<h2><a href="..">Back</a></h2>` : ""}
+            ${
+        Object.keys(entry).length > 0
+            ? `<ul>${renderChildrenTree(entry)}</ul>`
+            : ""
+    }
+        </report-children>
+
+        <report>
+            <label for="only-bad"><p><input id="only-bad" type="checkbox"> Only show non-success</p></label>
+            <hr>
+            <case success><case-name>Success:</case-name> ${stats.success}</case>
+            <case failure><case-name>Failure:</case-name> ${stats.failures}</case>
+            <case skipped><case-name>Skipped:</case-name> ${stats.skipped}</case>
+            <case error><case-name>Error:</case-name> ${stats.errors}</case>
+            <case><case-name>Total:</case-name> ${stats.total}</case>
+        </report>
+    </twin-grid>`;
+}
+
+function renderReportPageRoot(entry: RelationshipTree) {
+    const reports = collapseChildren(entry);
+    const stats = reduceReportStats(reports);
+    return `
+        <h1>root</h1>
+        ${renderTwinGrid(entry, stats, false)}
+        <hr>
+        <report-grid>
+            ${reports.map(renderReport).join("")}
+        <report-grid>
+`;
+}
+
+function reduceReportStats(reports: Report[]) {
+    const base = {
+        total: 0,
+        success: 0,
+        failures: 0,
+        skipped: 0,
+        errors: 0,
+    };
+    return reports.reduce(
         (acc, curr) => ({
             total: acc.total + curr.tests,
             success: acc.success + curr.tests -
@@ -96,132 +167,22 @@ function renderReportPage(level: string[], reports: Report[]) {
             skipped: acc.skipped + curr.skipped,
             errors: acc.errors + curr.errors,
         }),
-        {
-            total: 0,
-            success: 0,
-            failures: 0,
-            skipped: 0,
-            errors: 0,
-        },
+        base,
     );
+}
+
+function renderReportPage(entry: RelationshipTreeEntry) {
+    const existing = entry.report ? [entry.report] : [];
+    const reports = [...existing, ...collapseChildren(entry.children)];
+    const stats = reduceReportStats(reports);
     return `
-        <h1>${
-        nameOf(level)
-    } - Success: ${stats.success}, Failures: ${stats.failures}, Skipped: ${stats.skipped}, Errors: ${stats.errors}, Total: ${stats.total}
-        </h1>
-        <report-children>
-            ${level.length > 0 ? '<h2><a href="..">Back</a></h2>' : ""}
-            ${children.map((x) => renderChildLink(x, level)).join("")}
-        </report-children>
+        <h1>${nameOf(entry.relationship)}</h1>
+        ${renderTwinGrid(entry.children, stats, true)}
         <hr>
         <report-grid>
-            ${toRender.map(renderReport).join("")}
+            ${reports.map(renderReport).join("")}
         <report-grid>
 `;
-}
-
-function isEqual(lhs: string[], rhs: string[]): boolean {
-    if (lhs.length !== rhs.length) {
-        return false;
-    }
-    for (let i = 0; i < lhs.length; ++i) {
-        if (lhs[i] !== rhs[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function isChild(parent: string[], child: string[]): boolean {
-    if (parent.length >= child.length) {
-        return false;
-    }
-    for (let i = 0; i < parent.length; ++i) {
-        if (parent[i] !== child[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function findEntity(
-    parent: Report["relationship"],
-    reports: Report[],
-): Report[] {
-    return reports.filter((x) => isEqual(parent, x.relationship));
-}
-
-function findChildren(
-    parent: Report["relationship"],
-    reports: Report[],
-): Report[] {
-    return reports.filter((x) => isChild(parent, x.relationship));
-}
-
-function style() {
-    return `
-:root {
-    color-scheme: dark;
-    font-family:
-        system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
-}
-
-report-children {
-    display: grid;
-    border: 1px solid;
-    padding: 1rem;
-
-    h2 {
-        margin-top: 0;
-    }
-    h3 {
-        margin: 0.5rem 0;
-    }
-}
-
-report-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-    gap: 0.5rem;
-
-    report {
-        padding: 1rem;
-        border: 1px solid;
-        h2 {
-            margin-top: 0;
-        }
-    }
-
-    case {
-        &[passed] {
-            background-color: #589b31;
-        }
-        &[skipped] {
-            background-color: #ffe74c;
-            color: black;
-        }
-        &[failure] {
-            background-color: #d6371f;
-        }
-        &[error] {
-            background-color: #d6371f;
-        }
-        padding: 0.25rem;
-        display: flex;
-        font-family: monospace;
-
-        case-name {
-            flex: 1;
-        }
-    }
-}
-
-body {
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 1rem;
-}`;
 }
 
 function nameOf(relationship: string[]): string {
@@ -232,36 +193,39 @@ function nameOf(relationship: string[]): string {
     return last;
 }
 
-export async function render(out: string, reports: Report[]) {
-    await Deno.writeTextFile(join(out, ".gitignore"), "*");
-    await Deno.writeTextFile(join(out, "style.css"), style());
-    console.log(buildTree(reports));
-    const relationships = reports.map((x) => x.relationship);
-    for (const relationship of relationships) {
-        await ensureDir(join(out, ...relationship));
-        const acc = [];
-        for (const link of relationship) {
-            acc.push(link);
-            await Deno.writeTextFile(
-                join(out, ...acc, "index.html"),
-                rootHtml(
-                    nameOf(acc),
-                    renderReportPage(
-                        acc,
-                        reports,
-                    ),
-                ),
-            );
-        }
+async function renderTree(
+    tree: RelationshipTree,
+    out: string,
+) {
+    for (const key in tree) {
+        await ensureDir(join(out, ...tree[key].relationship));
+        await Deno.writeTextFile(
+            join(out, ...tree[key].relationship, "index.html"),
+            rootHtml(
+                nameOf(tree[key].relationship),
+                renderReportPage(tree[key]),
+            ),
+        );
+        await renderTree(tree[key].children, out);
     }
+}
+
+export async function render(out: string, reports: Report[]) {
+    await ensureDir(out);
+
+    await Deno.writeTextFile(join(out, ".gitignore"), "*");
+    await Deno.writeTextFile(join(out, "style.css"), styleCss);
+    await Deno.writeTextFile(
+        join(out, "filter-case-results.js"),
+        filterCaseResultsJs,
+    );
+    const tree = buildTree(reports);
+    await renderTree(tree, out);
     await Deno.writeTextFile(
         join(out, "index.html"),
         rootHtml(
             "root",
-            renderReportPage(
-                [],
-                reports,
-            ),
+            renderReportPageRoot(tree),
         ),
     );
 }
