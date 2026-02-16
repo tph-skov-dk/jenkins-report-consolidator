@@ -4,6 +4,35 @@ import { join } from "@std/path/join";
 import { escape } from "@std/html";
 import { stripPrepending } from "./shared.ts";
 
+type RelationshipTree = {
+    [key: string]: { children: RelationshipTree; report: Report | null };
+};
+
+function buildTree(reports: Report[]): RelationshipTree {
+    const ret: RelationshipTree = {};
+    const sorted = reports.toSorted((lhs, rhs) =>
+        lhs.relationship.length - rhs.relationship.length
+    );
+    for (const report of sorted) {
+        let curr = ret;
+        for (
+            let componentIdx = 0;
+            componentIdx < report.relationship.length;
+            ++componentIdx
+        ) {
+            const component = report.relationship[componentIdx];
+            if (curr[component] === undefined) {
+                curr[component] = { children: {}, report: null };
+            }
+            if (componentIdx === report.relationship.length - 1) {
+                curr[component].report = report;
+            }
+            curr = curr[component]["children"];
+        }
+    }
+    return ret;
+}
+
 function rootHtml(name: string, body: string) {
     return `
         <!DOCTYPE html>
@@ -58,10 +87,30 @@ function renderReportPage(level: string[], reports: Report[]) {
     const existing = findEntity(level, reports);
     const children = findChildren(level, reports);
     const toRender = [...existing, ...children];
+    const stats = toRender.reduce(
+        (acc, curr) => ({
+            total: acc.total + curr.tests,
+            success: acc.success + curr.tests -
+                (curr.skipped + curr.failures + curr.errors),
+            failures: acc.failures + curr.failures,
+            skipped: acc.skipped + curr.skipped,
+            errors: acc.errors + curr.errors,
+        }),
+        {
+            total: 0,
+            success: 0,
+            failures: 0,
+            skipped: 0,
+            errors: 0,
+        },
+    );
     return `
-        <h1>${nameOf(level)}</h1>
+        <h1>${
+        nameOf(level)
+    } - Success: ${stats.success}, Failures: ${stats.failures}, Skipped: ${stats.skipped}, Errors: ${stats.errors}, Total: ${stats.total}
+        </h1>
         <report-children>
-            <h2><a href="..">Back</a></h2>
+            ${level.length > 0 ? '<h2><a href="..">Back</a></h2>' : ""}
             ${children.map((x) => renderChildLink(x, level)).join("")}
         </report-children>
         <hr>
@@ -152,7 +201,10 @@ report-grid {
             background-color: #ffe74c;
             color: black;
         }
-        &[failed] {
+        &[failure] {
+            background-color: #d6371f;
+        }
+        &[error] {
             background-color: #d6371f;
         }
         padding: 0.25rem;
@@ -183,6 +235,7 @@ function nameOf(relationship: string[]): string {
 export async function render(out: string, reports: Report[]) {
     await Deno.writeTextFile(join(out, ".gitignore"), "*");
     await Deno.writeTextFile(join(out, "style.css"), style());
+    console.log(buildTree(reports));
     const relationships = reports.map((x) => x.relationship);
     for (const relationship of relationships) {
         await ensureDir(join(out, ...relationship));
