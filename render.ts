@@ -122,6 +122,7 @@ function renderTwinGrid(
     entry: RelationshipTree,
     stats: ReturnType<typeof reduceReportStats>,
     includeBack: boolean,
+    rootPathPrefix: string,
 ): string {
     return `
     <twin-grid>
@@ -129,7 +130,7 @@ function renderTwinGrid(
             ${includeBack ? `<h2><a href="..">Back</a></h2>` : ""}
             ${
         Object.keys(entry).length > 0
-            ? `<ul>${renderChildrenTree(entry)}</ul>`
+            ? `<ul>${renderChildrenTree(entry, rootPathPrefix)}</ul>`
             : ""
     }
         </report-children>
@@ -146,12 +147,12 @@ function renderTwinGrid(
     </twin-grid>`;
 }
 
-function renderReportPageRoot(entry: RelationshipTree) {
+function renderReportPageRoot(entry: RelationshipTree, rootPathPrefix: string) {
     const reports = collapseChildren(entry);
     const stats = reduceReportStats(reports);
     return `
         <h1>root</h1>
-        ${renderTwinGrid(entry, stats, false)}
+        ${renderTwinGrid(entry, stats, false, rootPathPrefix)}
         <hr>
         <report-grid>
             ${reports.map(renderReport).join("")}
@@ -180,13 +181,16 @@ function reduceReportStats(reports: Report[]) {
     );
 }
 
-function renderReportPage(entry: RelationshipTreeEntry) {
+function renderReportPage(
+    entry: RelationshipTreeEntry,
+    rootPathPrefix: string,
+) {
     const existing = entry.report ? [entry.report] : [];
     const reports = [...existing, ...collapseChildren(entry.children)];
     const stats = reduceReportStats(reports);
     return `
         <h1>${nameOf(entry.relationship)}</h1>
-        ${renderTwinGrid(entry.children, stats, true)}
+        ${renderTwinGrid(entry.children, stats, true, rootPathPrefix)}
         <hr>
         <report-grid>
             ${reports.map(renderReport).join("")}
@@ -213,7 +217,7 @@ async function renderTree(
             join(out, ...tree[key].relationship, "index.html"),
             rootHtml(
                 nameOf(tree[key].relationship),
-                renderReportPage(tree[key]),
+                renderReportPage(tree[key], rootPathPrefix),
                 rootPathPrefix,
             ),
         );
@@ -243,7 +247,7 @@ export async function render(
         join(out, "index.html"),
         rootHtml(
             "root",
-            renderReportPageRoot(tree),
+            renderReportPageRoot(tree, rootPathPrefix),
             rootPathPrefix,
         ),
     );
