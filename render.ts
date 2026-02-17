@@ -231,7 +231,7 @@ export async function render(
         join(out, "script.js"),
     );
     const tree = buildTree(reports);
-    await renderTree(tree, rootPathPrefix, out);
+    await renderTree(tree, out, rootPathPrefix);
     await Deno.writeTextFile(
         join(out, "index.html"),
         rootHtml(
