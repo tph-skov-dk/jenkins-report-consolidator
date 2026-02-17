@@ -97,14 +97,21 @@ function collapseChildren(tree: RelationshipTree): Report[] {
     return ret;
 }
 
-function renderChildrenTree(tree: RelationshipTree): string {
+function renderChildrenTree(
+    tree: RelationshipTree,
+    rootPathPrefix: string,
+): string {
     return Object.keys(tree).map((name) => {
         const entry = tree[name];
         return `<li>
-            <p><a href="/${tree[name].relationship.join("/")}">${name}</a></p>
+            <p><a href="${rootPathPrefix}${
+            tree[name].relationship.join("/")
+        }">${name}</a></p>
             ${
             Object.keys(entry.children).length > 0
-                ? `<ul>${renderChildrenTree(entry.children)}</ul>`
+                ? `<ul>${
+                    renderChildrenTree(entry.children, rootPathPrefix)
+                }</ul>`
                 : ""
         }
         </li>`;
