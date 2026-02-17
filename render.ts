@@ -216,9 +216,12 @@ export async function render(out: string, reports: Report[]) {
     await ensureDir(out);
 
     await Deno.writeTextFile(join(out, ".gitignore"), "*");
-    await Deno.copyFile("assets/style.css", join(out, "style.css"));
     await Deno.copyFile(
-        "assets/script.js",
+        join(import.meta.dirname!, "assets/style.css"),
+        join(out, "style.css"),
+    );
+    await Deno.copyFile(
+        join(import.meta.dirname!, "assets/script.js"),
         join(out, "script.js"),
     );
     const tree = buildTree(reports);
