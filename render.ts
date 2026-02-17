@@ -43,7 +43,7 @@ function buildTree(reports: Report[]): RelationshipTree {
     return ret;
 }
 
-function rootHtml(name: string, body: string) {
+function rootHtml(name: string, body: string, rootPathPrefix: string) {
     return `
         <!DOCTYPE html>
         <html lang="en">
@@ -51,8 +51,8 @@ function rootHtml(name: string, body: string) {
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>${name}</title>
-                <link href="/style.css" rel="stylesheet">
-                <script src="/script.js" defer></script>
+                <link href="${rootPathPrefix}style.css" rel="stylesheet">
+                <script src="${rootPathPrefix}script.js" defer></script>
             </head>
             <body>
                 ${body}
@@ -198,6 +198,7 @@ function nameOf(relationship: string[]): string {
 async function renderTree(
     tree: RelationshipTree,
     out: string,
+    rootPathPrefix: string,
 ) {
     for (const key in tree) {
         await ensureDir(join(out, ...tree[key].relationship));
@@ -206,13 +207,18 @@ async function renderTree(
             rootHtml(
                 nameOf(tree[key].relationship),
                 renderReportPage(tree[key]),
+                rootPathPrefix,
             ),
         );
-        await renderTree(tree[key].children, out);
+        await renderTree(tree[key].children, out, rootPathPrefix);
     }
 }
 
-export async function render(out: string, reports: Report[]) {
+export async function render(
+    reports: Report[],
+    out: string,
+    rootPathPrefix: string,
+) {
     await ensureDir(out);
 
     await Deno.writeTextFile(join(out, ".gitignore"), "*");
@@ -225,12 +231,13 @@ export async function render(out: string, reports: Report[]) {
         join(out, "script.js"),
     );
     const tree = buildTree(reports);
-    await renderTree(tree, out);
+    await renderTree(tree, rootPathPrefix, out);
     await Deno.writeTextFile(
         join(out, "index.html"),
         rootHtml(
             "root",
             renderReportPageRoot(tree),
+            rootPathPrefix,
         ),
     );
 }
