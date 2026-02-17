@@ -8,12 +8,31 @@ function escapeHtml(text) {
 }
 
 function updateCaseVisibility(checked) {
-    const items = document.querySelectorAll(
+    const cases = document.querySelectorAll(
         "report-grid case[success]",
     );
-    const style = checked ? "none" : "";
-    for (const item of items) {
-        item.style.display = style;
+    for (const item of cases) {
+        if (checked) {
+            item.style.setProperty("display", "none");
+        } else {
+            item.style.removeProperty("display");
+        }
+    }
+    const reports = document.querySelectorAll(
+        "report-grid report",
+    );
+    for (const report of reports) {
+        if (!checked) {
+            report.style.removeProperty("display");
+            continue;
+        }
+        const cases = report.querySelectorAll("case");
+        const isAllSuccess = cases
+            .entries()
+            .every(([, x]) => x.getAttribute("success") !== null);
+        if (isAllSuccess) {
+            report.style.setProperty("display", "none");
+        }
     }
 }
 
