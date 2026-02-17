@@ -2,10 +2,6 @@ import { ensureDir } from "@std/fs/ensure-dir";
 import { Report } from "./parsing.ts";
 import { join } from "@std/path/join";
 import { escape } from "@std/html";
-import styleCss from "./assets/style.css" with { type: "text" };
-import filterCaseResultsJs from "./assets/filter-case-results.js" with {
-    type: "text",
-};
 
 type RelationshipTreeEntry = {
     relationship: string[];
@@ -56,10 +52,11 @@ function rootHtml(name: string, body: string) {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>${name}</title>
                 <link href="/style.css" rel="stylesheet">
-                <script src="/filter-case-results.js" defer></script>
+                <script src="/script.js" defer></script>
             </head>
             <body>
                 ${body}
+                <dialog closedby="any" id="case-details-dialog"><button id="case-details-dialog-close">Close</button><hr><div id="case-details-dialog-content"></div></dialog>
             </body>
         </html>
     `;
@@ -68,7 +65,12 @@ function rootHtml(name: string, body: string) {
 function renderTestCase(test: Report["cases"][number]) {
     const type: "success" | "skipped" | "failure" | "error" = test.result;
 
-    return `<case ${type}><button>[i]</button>  <case-name>${
+    const button = type === "success"
+        ? "<span>...</span>"
+        : `<case-details-button case-data="${
+            escape(JSON.stringify(test))
+        }">[i]</case-details-button>`;
+    return `<case ${type}>${button}  <case-name>${
         escape(test.name)
     }</case-name> ${test.duration}s | ${
         type.padStart("skipped".length)
@@ -214,10 +216,10 @@ export async function render(out: string, reports: Report[]) {
     await ensureDir(out);
 
     await Deno.writeTextFile(join(out, ".gitignore"), "*");
-    await Deno.writeTextFile(join(out, "style.css"), styleCss);
-    await Deno.writeTextFile(
-        join(out, "filter-case-results.js"),
-        filterCaseResultsJs,
+    await Deno.copyFile("assets/style.css", join(out, "style.css"));
+    await Deno.copyFile(
+        "assets/script.js",
+        join(out, "script.js"),
     );
     const tree = buildTree(reports);
     await renderTree(tree, out);

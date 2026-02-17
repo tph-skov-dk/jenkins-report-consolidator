@@ -68,9 +68,9 @@ export type Case =
         message: string;
     } | {
         result: "skipped";
-        type: string;
-        message: string;
         trace: string;
+        message: string;
+        type: string;
     });
 
 export type Report = {
@@ -108,7 +108,10 @@ export function stripPrepending(root: string[], target: string[]): string[] {
 }
 
 function parseTestCase(x: z.infer<typeof TestCase>): Case {
-    const shared = { name: x["@name"], duration: x["@time"] };
+    const shared = {
+        name: x["@name"],
+        duration: x["@time"],
+    };
     switch (x.tag) {
         case "success":
             return { ...shared, result: "success" };
