@@ -5,17 +5,14 @@
         Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
 }
 
-twin-grid {
+nav-grid {
     display: flex;
     gap: 0.5rem;
     justify-content: space-between;
     align-items: flex-start;
 
-    > * {
+    > main {
         flex: 1;
-    }
-    > report {
-        flex: 2;
     }
 }
 
@@ -107,7 +104,6 @@ report-grid {
 }
 
 body {
-    max-width: 1000px;
     margin: 0 auto;
     padding: 1rem;
 }

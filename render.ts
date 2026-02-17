@@ -43,7 +43,7 @@ function buildTree(reports: Report[]): RelationshipTree {
     return ret;
 }
 
-function rootHtml(name: string, body: string, rootPathPrefix: string) {
+function wrapInRootHtml(name: string, body: string, rootPathPrefix: string) {
     return `
         <!DOCTYPE html>
         <html lang="en">
@@ -118,23 +118,10 @@ function renderChildrenTree(
     }).join("");
 }
 
-function renderTwinGrid(
-    entry: RelationshipTree,
+function renderReportStats(
     stats: ReturnType<typeof reduceReportStats>,
-    includeBack: boolean,
-    rootPathPrefix: string,
 ): string {
     return `
-    <twin-grid>
-        <report-children>
-            ${includeBack ? `<h2><a href="..">Back</a></h2>` : ""}
-            ${
-        Object.keys(entry).length > 0
-            ? `<ul>${renderChildrenTree(entry, rootPathPrefix)}</ul>`
-            : ""
-    }
-        </report-children>
-
         <report>
             <label for="only-bad"><p><input id="only-bad" type="checkbox"> Only show non-success</p></label>
             <hr>
@@ -143,20 +130,55 @@ function renderTwinGrid(
             <case skipped><case-name>Skipped:</case-name> ${stats.skipped}</case>
             <case error><case-name>Error:</case-name> ${stats.errors}</case>
             <case><case-name>Total:</case-name> ${stats.total}</case>
-        </report>
-    </twin-grid>`;
+        </report>`;
+}
+
+function wrapInNavigation(
+    entry: RelationshipTree,
+    body: string,
+    rootPathPrefix: string,
+    includeBack: boolean,
+) {
+    return `
+    <nav-grid>
+        <aside>
+        <report-children>
+                ${
+        includeBack ? `<h2><a href="..">Back</a></h2>` : "<h2>root</h2>"
+    }
+                ${
+        Object.keys(entry).length > 0
+            ? `<ul>${renderChildrenTree(entry, rootPathPrefix)}</ul>`
+            : ""
+    }
+            </report-children>
+        </aside>
+        <main>
+            ${body}        
+        </main>
+    </nav-grid>
+    `;
 }
 
 function renderReportPageRoot(entry: RelationshipTree, rootPathPrefix: string) {
     const reports = collapseChildren(entry);
-    const stats = reduceReportStats(reports);
+    const body = `
+    ${renderReportStats(reduceReportStats(reports))}
+    <hr>
+    <report-grid>
+        ${reports.map(renderReport).join("")}
+    <report-grid>    
+    `;
     return `
         <h1>root</h1>
-        ${renderTwinGrid(entry, stats, false, rootPathPrefix)}
-        <hr>
-        <report-grid>
-            ${reports.map(renderReport).join("")}
-        <report-grid>
+            ${
+        wrapInNavigation(
+            entry,
+            body,
+            rootPathPrefix,
+            false,
+        )
+    }
 `;
 }
 
@@ -187,15 +209,18 @@ function renderReportPage(
 ) {
     const existing = entry.report ? [entry.report] : [];
     const reports = [...existing, ...collapseChildren(entry.children)];
-    const stats = reduceReportStats(reports);
-    return `
-        <h1>${nameOf(entry.relationship)}</h1>
-        ${renderTwinGrid(entry.children, stats, true, rootPathPrefix)}
+    const body = `
+        ${renderReportStats(reduceReportStats(reports))}
         <hr>
         <report-grid>
             ${reports.map(renderReport).join("")}
         <report-grid>
-`;
+    `;
+
+    return `
+        <h1>${nameOf(entry.relationship)}</h1>
+        ${wrapInNavigation(entry.children, body, rootPathPrefix, true)}
+    `;
 }
 
 function nameOf(relationship: string[]): string {
@@ -215,7 +240,7 @@ async function renderTree(
         await ensureDir(join(out, ...tree[key].relationship));
         await Deno.writeTextFile(
             join(out, ...tree[key].relationship, "index.html"),
-            rootHtml(
+            wrapInRootHtml(
                 nameOf(tree[key].relationship),
                 renderReportPage(tree[key], rootPathPrefix),
                 rootPathPrefix,
@@ -245,7 +270,7 @@ export async function render(
     await renderTree(tree, out, rootPathPrefix);
     await Deno.writeTextFile(
         join(out, "index.html"),
-        rootHtml(
+        wrapInRootHtml(
             "root",
             renderReportPageRoot(tree, rootPathPrefix),
             rootPathPrefix,
